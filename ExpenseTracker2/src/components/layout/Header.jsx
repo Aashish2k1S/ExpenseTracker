@@ -1,7 +1,14 @@
-import { Calendar, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, RotateCcw, Database, RefreshCw } from 'lucide-react';
 import { formatMonthLabel, shiftMonth } from '../../utils/formatters';
 
-export default function Header({ selectedMonth, setSelectedMonth, onResetClick }) {
+export default function Header({
+  selectedMonth,
+  setSelectedMonth,
+  onResetClick,
+  dbStatus = 'checking',
+  isSyncing = false,
+  onReconnect,
+}) {
   return (
     <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-[#262626]">
       <div>
@@ -14,6 +21,37 @@ export default function Header({ selectedMonth, setSelectedMonth, onResetClick }
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5">
+        {/* MongoDB Status Pill */}
+        <button
+          type="button"
+          onClick={onReconnect}
+          title={
+            dbStatus === 'connected'
+              ? 'MongoDB Atlas: Connected and Synced (Click to refresh)'
+              : dbStatus === 'checking'
+              ? 'Connecting to MongoDB...'
+              : 'MongoDB Offline - Running on Local Storage Cache (Click to retry connection)'
+          }
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all ${
+            dbStatus === 'connected'
+              ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/40'
+              : dbStatus === 'checking'
+              ? 'bg-blue-950/40 border-blue-500/30 text-blue-400 animate-pulse'
+              : 'bg-amber-950/40 border-amber-500/30 text-amber-400 hover:bg-amber-900/40'
+          }`}
+        >
+          <Database className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">
+            {dbStatus === 'connected'
+              ? 'Atlas Synced'
+              : dbStatus === 'checking'
+              ? 'Checking DB...'
+              : 'Local (Offline)'}
+          </span>
+          {isSyncing && <RefreshCw className="w-3 h-3 animate-spin text-emerald-400 ml-0.5" />}
+        </button>
+
+        {/* Month Selector */}
         <div className="flex items-center bg-[#141414] border border-[#262626] rounded-xl p-1">
           <button
             type="button"
@@ -37,6 +75,7 @@ export default function Header({ selectedMonth, setSelectedMonth, onResetClick }
           </button>
         </div>
 
+        {/* Reset Defaults Button */}
         <button
           type="button"
           onClick={onResetClick}

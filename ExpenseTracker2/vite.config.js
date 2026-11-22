@@ -45,6 +45,12 @@ export default defineConfig({
     host: true, // Exposes the server to your local network
     port: 5173,
     allowedHosts: ['.trycloudflare.com'], // Allows Cloudflare tunnel URLs
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
+    },
   },
 });
 

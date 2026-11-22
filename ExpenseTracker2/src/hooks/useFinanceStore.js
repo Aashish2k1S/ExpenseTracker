@@ -12,6 +12,7 @@ import {
   getDefaultDateTimeForMonth,
   generateId,
 } from '../utils/formatters';
+import { financeApi } from '../services/api';
 
 export function useFinanceStore() {
   const [state, setState] = useState(() => {
@@ -31,8 +32,11 @@ export function useFinanceStore() {
 
   const [selectedMonth, setSelectedMonth] = useState(DEFAULT_MONTH);
   const [toast, setToast] = useState(null);
+  const [dbStatus, setDbStatus] = useState('checking'); // 'checking' | 'connected' | 'offline'
+  const [isSyncing, setIsSyncing] = useState(false);
   const toastTimerRef = useRef(null);
 
+  // Sync to localStorage as offline cache whenever state changes
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -40,6 +44,64 @@ export function useFinanceStore() {
       console.error('Failed to save to localStorage:', err);
     }
   }, [state]);
+
+  // Initial load from MongoDB Atlas
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFromDB() {
+      setDbStatus('checking');
+      const health = await financeApi.checkHealth();
+      if (!health.online || !health.dbConnected) {
+        if (isMounted) setDbStatus('offline');
+        return;
+      }
+
+      const res = await financeApi.getState();
+      if (res.success && res.data && isMounted) {
+        const remote = res.data;
+        setState((prev) => ({
+          ...prev,
+          profile: remote.profile || prev.profile,
+          sbiBalance: typeof remote.sbiBalance === 'number' ? remote.sbiBalance : prev.sbiBalance,
+          goals: Array.isArray(remote.goals) && remote.goals.length > 0 ? remote.goals : prev.goals,
+          transactions: Array.isArray(remote.transactions) ? remote.transactions : prev.transactions,
+          salaryRoutineByMonth: remote.salaryRoutineByMonth || prev.salaryRoutineByMonth || {},
+        }));
+        setDbStatus('connected');
+      } else if (isMounted) {
+        setDbStatus('offline');
+      }
+    }
+
+    loadFromDB();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const reconnectDB = async () => {
+    setDbStatus('checking');
+    const health = await financeApi.checkHealth();
+    if (health.online && health.dbConnected) {
+      const res = await financeApi.getState();
+      if (res.success && res.data) {
+        const remote = res.data;
+        setState((prev) => ({
+          ...prev,
+          profile: remote.profile || prev.profile,
+          sbiBalance: typeof remote.sbiBalance === 'number' ? remote.sbiBalance : prev.sbiBalance,
+          goals: Array.isArray(remote.goals) && remote.goals.length > 0 ? remote.goals : prev.goals,
+          transactions: Array.isArray(remote.transactions) ? remote.transactions : prev.transactions,
+          salaryRoutineByMonth: remote.salaryRoutineByMonth || prev.salaryRoutineByMonth || {},
+        }));
+        setDbStatus('connected');
+        showToast('Connected to MongoDB Atlas!', 'success');
+        return;
+      }
+    }
+    setDbStatus('offline');
+    showToast('MongoDB is not connected. Add your MONGODB_URI in .env', 'warn');
+  };
 
   const showToast = (message, tone = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -193,6 +255,12 @@ export function useFinanceStore() {
       };
     });
 
+    // Sync to MongoDB in background
+    if (dbStatus === 'connected') {
+      setIsSyncing(true);
+      financeApi.addTransaction(newTx).finally(() => setIsSyncing(false));
+    }
+
     showToast(
       `${
         newTx.type === 'income'
@@ -259,6 +327,11 @@ export function useFinanceStore() {
         transactions: prev.transactions.filter((t) => t.id !== txId),
       };
     });
+
+    if (dbStatus === 'connected') {
+      setIsSyncing(true);
+      financeApi.deleteTransaction(txId).finally(() => setIsSyncing(false));
+    }
 
     showToast(`Deleted "${targetTx.description}" and reversed balance`, 'info');
   };
@@ -352,85 +425,130 @@ export function useFinanceStore() {
       },
     ];
 
-    setState((prev) => {
-      const nextSbi = prev.sbiBalance + 16000;
-      const increments = { emergency: 8000, macbook: 5000, home: 2500, ppf: 500 };
-      const nextGoals = prev.goals.map((g) =>
-        increments[g.id] ? { ...g, saved: g.saved + increments[g.id] } : g
-      );
-      return {
-        ...prev,
-        sbiBalance: nextSbi,
-        goals: nextGoals,
-        transactions: [...routineTxs.reverse(), ...prev.transactions],
-        salaryRoutineByMonth: {
-          ...prev.salaryRoutineByMonth,
-          [selectedMonth]: {
-            step1: true,
-            step2: true,
-            step3: true,
-            step4: true,
-            executedAt: new Date().toISOString(),
+    const nextSbi = state.sbiBalance + 16000;
+    const increments = { emergency: 8000, macbook: 5000, home: 2500, ppf: 500 };
+    const nextGoals = state.goals.map((g) =>
+      increments[g.id] ? { ...g, saved: g.saved + increments[g.id] } : g
+    );
+    const nextTxs = [...routineTxs.reverse(), ...state.transactions];
+    const nextChecklist = {
+      step1: true,
+      step2: true,
+      step3: true,
+      step4: true,
+      executedAt: new Date().toISOString(),
+    };
+
+    setState((prev) => ({
+      ...prev,
+      sbiBalance: nextSbi,
+      goals: nextGoals,
+      transactions: nextTxs,
+      salaryRoutineByMonth: {
+        ...prev.salaryRoutineByMonth,
+        [selectedMonth]: nextChecklist,
+      },
+    }));
+
+    if (dbStatus === 'connected') {
+      setIsSyncing(true);
+      financeApi
+        .updateSalaryRoutine({
+          month: selectedMonth,
+          routineData: {
+            sbiBalance: nextSbi,
+            goals: nextGoals,
+            transactions: nextTxs,
+            checklist: nextChecklist,
           },
-        },
-      };
-    });
+        })
+        .finally(() => setIsSyncing(false));
+    }
 
     showToast('Salary-Day Routine executed! +₹16,000 SBI, +₹15,500 UBI, +₹500 PPF', 'success');
   };
 
   const toggleChecklistStep = (stepKey) => {
-    setState((prev) => {
-      const current = prev.salaryRoutineByMonth[selectedMonth] || {
-        step1: false,
-        step2: false,
-        step3: false,
-        step4: false,
-        executedAt: null,
-      };
-      return {
-        ...prev,
-        salaryRoutineByMonth: {
-          ...prev.salaryRoutineByMonth,
-          [selectedMonth]: {
-            ...current,
-            [stepKey]: !current[stepKey],
-          },
-        },
-      };
-    });
+    const current = state.salaryRoutineByMonth[selectedMonth] || {
+      step1: false,
+      step2: false,
+      step3: false,
+      step4: false,
+      executedAt: null,
+    };
+    const nextChecklist = {
+      ...current,
+      [stepKey]: !current[stepKey],
+    };
+
+    setState((prev) => ({
+      ...prev,
+      salaryRoutineByMonth: {
+        ...prev.salaryRoutineByMonth,
+        [selectedMonth]: nextChecklist,
+      },
+    }));
+
+    if (dbStatus === 'connected') {
+      financeApi.updateSalaryRoutine({
+        month: selectedMonth,
+        checklist: nextChecklist,
+      });
+    }
   };
 
   const updateGoal = (updatedGoal) => {
+    const nextGoals = state.goals.map((g) =>
+      g.id === updatedGoal.id
+        ? {
+            ...g,
+            saved: Math.max(0, Number(updatedGoal.saved) || 0),
+            target: Math.max(1, Number(updatedGoal.target) || 1),
+            monthlyContribution: Math.max(0, Number(updatedGoal.monthlyContribution) || 0),
+          }
+        : g
+    );
+
     setState((prev) => ({
       ...prev,
-      goals: prev.goals.map((g) =>
-        g.id === updatedGoal.id
-          ? {
-              ...g,
-              saved: Math.max(0, Number(updatedGoal.saved) || 0),
-              target: Math.max(1, Number(updatedGoal.target) || 1),
-              monthlyContribution: Math.max(0, Number(updatedGoal.monthlyContribution) || 0),
-            }
-          : g
-      ),
+      goals: nextGoals,
     }));
+
+    if (dbStatus === 'connected') {
+      setIsSyncing(true);
+      financeApi.updateGoals(nextGoals).finally(() => setIsSyncing(false));
+    }
+
     showToast(`Updated ${updatedGoal.name}`, 'success');
   };
 
   const addGoal = (newGoal) => {
+    const nextGoals = [...state.goals, newGoal];
     setState((prev) => ({
       ...prev,
-      goals: [...prev.goals, newGoal],
+      goals: nextGoals,
     }));
+
+    if (dbStatus === 'connected') {
+      setIsSyncing(true);
+      financeApi.updateGoals(nextGoals).finally(() => setIsSyncing(false));
+    }
+
     showToast(`Created goal "${newGoal.name}"`, 'success');
   };
 
   const updateSbiBalance = (newBalance) => {
+    const num = Math.max(0, Number(newBalance) || 0);
     setState((prev) => ({
       ...prev,
-      sbiBalance: Math.max(0, Number(newBalance) || 0),
+      sbiBalance: num,
     }));
+
+    if (dbStatus === 'connected') {
+      setIsSyncing(true);
+      financeApi.updateSbiBalance(num).finally(() => setIsSyncing(false));
+    }
+
     showToast('Updated SBI operating balance', 'success');
   };
 
@@ -455,14 +573,21 @@ export function useFinanceStore() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const parsed = JSON.parse(evt.target.result);
         if (!parsed || !Array.isArray(parsed.goals) || typeof parsed.sbiBalance !== 'number') {
           showToast('Invalid backup file format', 'error');
           return;
         }
-        setState({ ...createDefaultState(), ...parsed });
+        const fullState = { ...createDefaultState(), ...parsed };
+        setState(fullState);
+
+        if (dbStatus === 'connected') {
+          setIsSyncing(true);
+          await financeApi.syncFullState(fullState).finally(() => setIsSyncing(false));
+        }
+
         showToast('Imported financial backup successfully', 'success');
       } catch {
         showToast('Could not parse JSON file', 'error');
@@ -473,8 +598,15 @@ export function useFinanceStore() {
   };
 
   const handleResetDefaults = () => {
-    setState(createDefaultState());
+    const defaultData = createDefaultState();
+    setState(defaultData);
     setSelectedMonth(DEFAULT_MONTH);
+
+    if (dbStatus === 'connected') {
+      setIsSyncing(true);
+      financeApi.resetState().finally(() => setIsSyncing(false));
+    }
+
     showToast('Reset to November 2026 defaults', 'info');
   };
 
@@ -484,6 +616,9 @@ export function useFinanceStore() {
     setSelectedMonth,
     toast,
     showToast,
+    dbStatus,
+    isSyncing,
+    reconnectDB,
     metrics: {
       ubiBalance,
       ppfBalance,

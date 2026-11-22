@@ -64,6 +64,9 @@ export default function App() {
             selectedMonth={store.selectedMonth}
             setSelectedMonth={store.setSelectedMonth}
             onResetClick={() => openModal('reset')}
+            dbStatus={store.dbStatus}
+            isSyncing={store.isSyncing}
+            onReconnect={store.reconnectDB}
           />
 
           {activeTab === 'overview' && (
