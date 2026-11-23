@@ -46,7 +46,7 @@ const FinanceSchema = new mongoose.Schema(
       inHandSalary: { type: Number, default: 32000 },
       deductions: { type: Number, default: 4000 },
     },
-    sbiBalance: { type: Number, default: 1032 },
+    sbiBalance: { type: Number, default: 0 },
     goals: { type: [GoalSchema], default: [] },
     transactions: { type: [TransactionSchema], default: [] },
     salaryRoutineByMonth: {

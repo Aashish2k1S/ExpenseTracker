@@ -62,7 +62,7 @@ export const createDefaultState = () => ({
     inHandSalary: 32000,
     deductions: 4000,
   },
-  sbiBalance: 1032,
+  sbiBalance: 0,
   goals: [
     {
       id: 'emergency',
@@ -103,7 +103,7 @@ export const createDefaultState = () => ({
       id: 'ppf',
       name: 'PPF',
       horizon: 'long',
-      saved: 1000,
+      saved: 0,
       target: 100000,
       monthlyContribution: 500,
       account: 'PPF',

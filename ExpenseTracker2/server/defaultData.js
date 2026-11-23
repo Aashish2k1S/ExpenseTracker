@@ -55,7 +55,7 @@ export const getDefaultState = () => ({
     inHandSalary: 32000,
     deductions: 4000,
   },
-  sbiBalance: 1032,
+  sbiBalance: 0,
   goals: DEFAULT_GOALS,
   transactions: [],
   salaryRoutineByMonth: {},
