@@ -17,10 +17,17 @@ app.use(express.json({ limit: '10mb' }));
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   const isConnected = mongoose.connection.readyState === 1;
+  const hasUri = Boolean(process.env.MONGODB_URI);
   res.json({
     status: 'ok',
     database: isConnected ? 'connected' : 'disconnected',
     mongoReadyState: mongoose.connection.readyState,
+    hasMongoUri: hasUri,
+    message: isConnected
+      ? 'MongoDB Atlas is connected and ready'
+      : !hasUri
+      ? 'MONGODB_URI environment variable is missing'
+      : 'Connecting or unable to reach MongoDB cluster (Check Atlas Network IP whitelist 0.0.0.0/0)',
   });
 });
 

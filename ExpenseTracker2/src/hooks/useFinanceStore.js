@@ -100,7 +100,13 @@ export function useFinanceStore() {
       }
     }
     setDbStatus('offline');
-    showToast('MongoDB is not connected. Add your MONGODB_URI in .env', 'warn');
+    if (!health.online) {
+      showToast('Backend API unreachable. Check if server or Vercel is deployed.', 'error');
+    } else if (!health.hasMongoUri) {
+      showToast('MONGODB_URI missing in Vercel Environment Variables. Add it & Redeploy.', 'warn');
+    } else {
+      showToast(health.message || 'MongoDB is not connected. Check Atlas IP whitelist (0.0.0.0/0).', 'warn');
+    }
   };
 
   const showToast = (message, tone = 'success') => {

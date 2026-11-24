@@ -22,13 +22,20 @@ app.use(async (req, res, next) => {
   next();
 });
 
-// Health check endpoint (support both with and without /api prefix)
+// Diagnostic Health check endpoint
 const healthHandler = (req, res) => {
   const isConnected = mongoose.connection.readyState === 1;
+  const hasUri = Boolean(process.env.MONGODB_URI);
   res.json({
     status: 'ok',
     database: isConnected ? 'connected' : 'disconnected',
     mongoReadyState: mongoose.connection.readyState,
+    hasMongoUri: hasUri,
+    message: isConnected
+      ? 'MongoDB Atlas is connected and ready'
+      : !hasUri
+      ? 'MONGODB_URI environment variable is missing on Vercel'
+      : 'Connecting or unable to reach MongoDB cluster (Check Atlas Network IP whitelist 0.0.0.0/0)',
   });
 };
 

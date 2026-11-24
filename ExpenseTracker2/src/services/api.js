@@ -30,7 +30,12 @@ export const financeApi = {
       const res = await fetch('/api/health');
       if (!res.ok) return { online: false, dbConnected: false };
       const data = await res.json();
-      return { online: true, dbConnected: data.database === 'connected' };
+      return {
+        online: true,
+        dbConnected: data.database === 'connected',
+        hasMongoUri: data.hasMongoUri,
+        message: data.message,
+      };
     } catch {
       return { online: false, dbConnected: false };
     }
