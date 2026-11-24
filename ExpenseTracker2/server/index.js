@@ -28,7 +28,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/finance', financeRoutes);
 
 // Global Error Handler
-app.use((err, _, res, _) => {
+app.use((err, req, res, next) => {
   console.error('Unhandled server error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
